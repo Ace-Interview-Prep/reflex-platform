@@ -1,8 +1,8 @@
 {
-  "owner": "reflex-frp",
+  "owner": "Ace-Interview-Prep",
   "repo": "reflex-dom",
-  "branch": "release/reflex-dom/0.6.3.1",
+  "branch": "gs/android-cookies",
   "private": false,
-  "rev": "5d1dbde4471d7f9be60977b972ab0219026ff5dc",
-  "sha256": "1kccc4cx6bxyr77m4dzqwrqb69ypwg3mbfiw728nykjrfkh8w72b"
+  "rev": "7a1f7f06f2296618991fe84923eab0466e97c32f",
+  "sha256": "1q3b2slfd0wyb9r5czgjg79r3bxdl7pmzw9lf8vsxcdyhgim8bhr"
 }
