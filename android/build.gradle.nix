@@ -5,6 +5,8 @@
 , googleServicesClasspath
 , googleServicesPlugin
 , universalApk
+, minifyEnabled ? true
+, shrinkResources ? true
 }:
 ''
 buildscript {
@@ -90,8 +92,16 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
-            useProguard false
+            // minifyEnabled ${builtins.toJSON minifyEnabled}
+            // shrinkResources ${builtins.toJSON shrinkResources}
+            // useProguard false
+            minifyEnabled true
+            shrinkResources true
+            // R8 is used when minifyEnabled=true (useProguard is ignored on modern toolchains)
+            proguardFiles(
+               getDefaultProguardFile('proguard-android-optimize.txt'),
+               'proguard-rules.pro'
+            )
             zipAlignEnabled true
             ${if releaseKey == null then "" else ''
             signingConfig signingConfigs.release
