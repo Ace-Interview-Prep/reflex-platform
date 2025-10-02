@@ -134,7 +134,7 @@ in {
                 exit 1
               fi
               cp --no-preserve=mode "$exe" "$ARCH_LIB/libHaskellActivity.so"
-              #llvm-strip --strip-all "$ARCH_LIB/libHaskellActivity.so"
+              llvm-strip --strip-all "$ARCH_LIB/libHaskellActivity.so"
               '' + sharedLibsCmd + ''
             }
         '') abiVersions) + ''
