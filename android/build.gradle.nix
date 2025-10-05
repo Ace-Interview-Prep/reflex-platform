@@ -92,16 +92,8 @@ android {
 
     buildTypes {
         release {
-            // minifyEnabled ${builtins.toJSON minifyEnabled}
-            // shrinkResources ${builtins.toJSON shrinkResources}
-            // useProguard false
-            minifyEnabled true
-            shrinkResources true
-            // R8 is used when minifyEnabled=true (useProguard is ignored on modern toolchains)
-            proguardFiles(
-               getDefaultProguardFile('proguard-android-optimize.txt'),
-               'proguard-rules.pro'
-            )
+            minifyEnabled false
+            useProguard false
             zipAlignEnabled true
             ${if releaseKey == null then "" else ''
             signingConfig signingConfigs.release

@@ -1,3 +1,5 @@
+-dontoptimize
+-dontshrink
 -dontusemixedcaseclassnames
 -dontskipnonpubliclibraryclasses
 -dontpreverify

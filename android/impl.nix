@@ -99,7 +99,7 @@ in {
             (ghcAndroidAarch64.reflex-dom.src + "/java");
         };
         src = ./src;
-        nativeBuildInputs = [ nixpkgs.rsync nixpkgs.libllvm ];
+        nativeBuildInputs = [ nixpkgs.rsync ];
         unpackPhase = "";
       } (''
           cp -r --no-preserve=mode "$src" "$out"
@@ -134,7 +134,6 @@ in {
                 exit 1
               fi
               cp --no-preserve=mode "$exe" "$ARCH_LIB/libHaskellActivity.so"
-              llvm-strip --strip-all "$ARCH_LIB/libHaskellActivity.so"
               '' + sharedLibsCmd + ''
             }
         '') abiVersions) + ''
