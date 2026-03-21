@@ -1,3 +1,16 @@
+# haskell-overlays/untriaged.nix — Version pins and build fixes
+#
+# Overrides for non-reflex Haskell packages that need specific versions
+# or build workarounds.  These haven't been categorized into their own
+# overlay files yet.  Includes:
+#   • haddock-api pin for GHC 8.6 compat
+#   • aeson 2.x migration (with hashable, attoparsec, vector, etc.)
+#   • pandoc 2.16 + dependencies (citeproc, hslua, lpeg)
+#   • beam packages (beam-core, beam-migrate, beam-postgres)
+#   • hnix 0.12 + hnix-store
+#   • ghcid, hlint, stylish-haskell pins
+#   • Various dontCheck / doJailbreak for long-running or broken tests
+#
 { haskellLib
 , fetchFromGitHub
 , nixpkgs

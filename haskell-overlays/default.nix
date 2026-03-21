@@ -1,3 +1,28 @@
+# haskell-overlays/default.nix — Haskell package-set overlay orchestrator
+#
+# This module defines and composes all the haskell overlays that
+# reflex-platform applies to every GHC package set.  Each overlay is
+# a function (self: super: { ... }) that overrides haskell packages.
+#
+# The main export is `combined`, which folds all constituent overlays
+# in a specific order.  The composition order is:
+#
+#   1. user-custom-pre    (haskellOverlaysPre from the caller)
+#   2. reflexPackages      (all reflex ecosystem packages: reflex, reflex-dom, jsaddle, etc.)
+#   3. profiling           (enable/disable library profiling)
+#   4. untriaged           (version pins and fixes for non-reflex deps)
+#   5. exposeAllUnfoldings (optional: -fexpose-all-unfoldings for inlining)
+#   6. Android/iOS flags   (platform-specific: -fPIC, -fPIE, linker flags)
+#   7. combined-any        (version-gated fixes for GHC 8.x)
+#   8. combined-ghc        (native-GHC-only overrides)
+#      OR combined-ghcjs   (GHCJS-only overrides: textJSString, fast-weak)
+#   9. loadSplices         (cross-compilation: load pre-saved TH splices)
+#  10. android / ios / wasm (target-specific nullifications and flags)
+#  11. user-custom-post    (haskellOverlaysPost from the caller)
+#
+# Conditional overlays use `optionalExtension` which returns a no-op
+# overlay when the condition is false, keeping the composition clean.
+#
 { lib
 , haskellLib
 , nixpkgs
@@ -21,8 +46,12 @@ let
 in
 
 rec {
+  # Return the overlay when `cond` is true, otherwise a no-op overlay.
+  # This avoids wrapping every conditional overlay in `if` blocks.
   optionalExtension = cond: overlay: if cond then overlay else _: _: { };
 
+  # Check if a GHC version matches a major.minor range, e.g.
+  # `versionWildcard [8 6]` matches 8.6.0..8.6.x but not 8.7.0.
   versionWildcard = versionList:
     let
       versionListInc = lib.init versionList ++ [ (lib.last versionList + 1) ];
@@ -31,6 +60,7 @@ rec {
     in
     version: lib.versionOlder version top && lib.versionAtLeast version bottom;
 
+  # Compose a list of overlays into a single overlay via right-fold.
   foldExtensions = lib.foldr lib.composeExtensions (_: _: { });
 
   getGhcVersion = ghc: ghc.version;
@@ -165,9 +195,12 @@ rec {
     super;
 
   ##
-  ## Constituent
+  ## Constituent overlays — each imported from its own file.
+  ## See the module-level comment for composition order.
   ##
 
+  # All reflex ecosystem Haskell packages (reflex, reflex-dom, jsaddle,
+  # gargoyle, dependent-sum family, etc.).  This is the largest overlay.
   reflexPackages = import ./reflex-packages {
     inherit
       haskellLib lib nixpkgs thunkSet fetchFromGitHub fetchFromBitbucket hackGet
@@ -175,10 +208,11 @@ rec {
       useWebkit2Gtk
       ;
   };
+  # Pass -fexpose-all-unfoldings to every package for cross-module inlining.
   exposeAllUnfoldings = import ./expose-all-unfoldings.nix { };
 
-  # For GHC and GHCJS
-  any = _: _: { };
+  # Version-gated overlays applied to BOTH GHC and GHCJS.
+  any = _: _: { }; # Placeholder for future universal overrides.
   any-8 = import ./any-8.nix { inherit haskellLib lib getGhcVersion; };
   any-8_6 = import ./any-8.6.nix { inherit haskellLib fetchFromGitHub; inherit (nixpkgs) pkgs; };
   any-head = import ./any-head.nix { inherit haskellLib fetchFromGitHub; };
@@ -187,11 +221,15 @@ rec {
   ghc-8_6 = _: _: { };
   ghc-head = _: _: { };
 
+  # Controls enableLibraryProfiling for all packages (disabled on iOS always).
   profiling = import ./profiling.nix {
     inherit haskellLib;
     inherit enableLibraryProfiling;
   };
 
+  # Template Haskell splice save/load overlays for cross-compilation.
+  # saveSplices: run on native GHC, serializes TH results to disk.
+  # loadSplices: run on cross GHC, deserializes TH results from disk.
   saveSplices = ghcVersion: import ./splices-load-save/save-splices.nix {
     inherit lib haskellLib fetchFromGitHub ghcVersion;
   };
@@ -208,7 +246,7 @@ rec {
     splicedHaskellPackages = ghcSavedSplices-8_10;
   };
 
-  # Just for GHCJS
+  # GHCJS-only overlays — package patches for the JavaScript backend.
   ghcjs_8_6 = import ./ghcjs-8.6 {
     inherit
       lib haskellLib nixpkgs fetchgit fetchFromGitHub
@@ -249,6 +287,8 @@ rec {
     inherit lib;
   };
 
+  # Target-specific overlays — nullify unsupported packages and
+  # adjust build flags for mobile/WASM targets.
   android = import ./android {
     inherit haskellLib;
     inherit nixpkgs;
@@ -259,6 +299,8 @@ rec {
     inherit (nixpkgs) lib;
   };
 
+  # Version pins and build fixes for non-reflex Haskell dependencies.
+  # "Untriaged" because these haven't been categorized into specific overlays.
   untriaged = import ./untriaged.nix {
     inherit haskellLib;
     inherit fetchFromGitHub;
@@ -267,6 +309,9 @@ rec {
 
   wasm = import ./wasm;
 
+  # User-provided overlays, applied at the very start and very end of
+  # the composition chain so they can both provide base overrides and
+  # final fixups.
   user-custom-pre = foldExtensions haskellOverlaysPre;
   user-custom-post = foldExtensions haskellOverlaysPost;
 }

@@ -1,23 +1,66 @@
+# reflex-platform/default.nix — Top-level entry point
+#
+# This is the main entry point for reflex-platform.  It constructs a
+# complete Haskell development environment that supports multiple GHC
+# backends (native GHC 8.6/8.10, GHCJS 8.6/8.10, WASM, iOS cross,
+# Android cross) from a single nixpkgs pin.
+#
+# Architecture overview:
+#   1. Instantiate nixpkgs with a stack of overlays (hackGet, haskell
+#      overlay bindings, splicesEval for cross-compilation GHC,
+#      mobile-ghc patches, forceStaticLibs, allCabalHashes).
+#   2. For each target platform (ghcjs, android-aarch64, android-aarch32,
+#      ios-aarch64, ios-aarch32, ios-simulator64, wasm), create a
+#      nixpkgsCross instance with the appropriate crossSystem config.
+#   3. For each (platform, GHC-version) pair, compose the haskell
+#      overlays from ./haskell-overlays into a single `overrides`
+#      function, then apply it to the base haskell package set.
+#   4. The `project` function (./project/default.nix) provides a
+#      convenient multi-package project builder.
+#   5. Mobile builders (./android, ./ios) wrap platform-specific
+#      toolchains (Gradle/SDK for Android, Xcode/codesign for iOS).
+#
+# Return value: an attribute set (`this`) containing every configured
+# package set (ghc, ghcjs, ghcAndroidAarch64, etc.), the `project`
+# helper, mobile builders, dev tools, and legacy compatibility shims.
 { nixpkgsFunc ? import ./nixpkgs
 , system ? builtins.currentSystem
 , config ? { }
 , enableLibraryProfiling ? false
+  # Build Haskell libraries with profiling enabled (cost-centre annotations).
+  # Disabled by default; iOS targets always have profiling off regardless.
 , enableExposeAllUnfoldings ? true
+  # Pass -fexpose-all-unfoldings to GHC/GHCJS for every package.
+  # Critical for cross-module inlining in reflex, jsaddle, and reflex-dom.
 , enableTraceReflexEvents ? false
+  # Build reflex with -fdebug-trace-events for runtime FRP event tracing.
 , useFastWeak ? true
+  # Use the fast-weak GHCJS runtime patch for cheaper weak references.
 , useReflexOptimizer ? false
-, useTextJSString ? true # Use an implementation of "Data.Text" that uses the more performant "Data.JSString" from ghcjs-base under the hood.
-, useWebkit2Gtk ? false # Enable webkit2gtk to build reflex-dom desktop apps
-, __useTemplateHaskell ? true # Deprecated, just here until we remove feature from reflex and stop CIing it
+  # Enable the GHC plugin-based reflex optimizer (experimental).
+, useTextJSString ? true
+  # Replace Data.Text internals with Data.JSString on GHCJS for performance.
+, useWebkit2Gtk ? false
+  # Use webkit2gtk backend for reflex-dom desktop apps on Linux.
+  # When false, jsaddle-warp (websocket) backend is used instead.
+, __useTemplateHaskell ? true
+  # Deprecated flag; kept for CI compatibility until reflex removes the feature.
 , __useNewerCompiler ? true
+  # When true, prefer GHC 8.10 over 8.6 for all targets.
 , iosSdkVersion ? "16.1"
 , nixpkgsOverlays ? []
+  # Additional nixpkgs-level overlays appended after all platform overlays.
 , haskellOverlays ? [] # TODO deprecate
 , haskellOverlaysPre ? []
+  # Haskell package-set overlays applied BEFORE reflex-platform's own.
 , haskellOverlaysPost ? haskellOverlays
-, hideDeprecated ? false # The moral equivalent of "-Wcompat -Werror" for using reflex-platform.
+  # Haskell package-set overlays applied AFTER reflex-platform's own.
+, hideDeprecated ? false
+  # When true, omit deprecated attributes from the return set.
 }:
 
+    # Platform support gates — these determine which cross-compilation
+    # targets are available based on the build host.
 let iosSupport = system == "x86_64-darwin";
     androidSupport = lib.elem system [ "x86_64-linux" ];
     ghc86Support = lib.elem system ["x86_64-linux" "x86_64-darwin"];
@@ -26,7 +69,14 @@ let iosSupport = system == "x86_64-darwin";
       "16.1" = "14.1";
     }.${iosSdkVersion} or (throw "Unknown iosSdkVersion: ${iosSdkVersion}");
 
-    # Overlay for GHC which supports the external splices plugin
+    # Overlay for GHC variants that support the Template Haskell
+    # splices save/load mechanism.  Cross-compilation cannot run TH
+    # splices natively, so reflex-platform uses a two-pass strategy:
+    #   1. ghcSavedSplices — a native GHC that evaluates and serializes
+    #      TH splices to disk (the "save" pass).
+    #   2. ghcSplices-8_6 / ghcSplices-8_10 — patched GHC compilers
+    #      that load pre-computed splices instead of evaluating them
+    #      (the "load" pass), enabling cross-compilation.
     splicesEval = self: super: {
       haskell = super.haskell // {
         compiler = super.haskell.compiler // {
@@ -89,9 +139,16 @@ let iosSupport = system == "x86_64-darwin";
       };
     };
 
+    # Expose hackGet, thunkSet, and filterGit as top-level nixpkgs attrs.
+    # These are the thunk resolution primitives used throughout the overlay
+    # system to turn packed thunks (github.json / git.json) into source paths.
     hackGetOverlay = self: super:
       import ./nixpkgs-overlays/hack-get { inherit lib; } self;
 
+    # Store the composed haskell overlays as nixpkgs.haskell.overlays so that
+    # each GHC package set can apply them uniformly via `overrides = ...combined`.
+    # This overlay does NOT mutate any haskell packages — it only binds the
+    # overlay functions for later consumption.
     bindHaskellOverlays = self: super: {
       haskell = super.haskell // {
         overlays = super.haskell.overlays or {} // import ./haskell-overlays {
@@ -109,6 +166,9 @@ let iosSupport = system == "x86_64-darwin";
       };
     };
 
+    # Force static library builds for libiconv and zlib when cross-compiling.
+    # Mobile targets need static archives (.a) because dynamic linking is
+    # either unsupported or unreliable on iOS/Android.
     forceStaticLibs = self: super: {
       darwin = super.darwin // {
         libiconv = super.darwin.libiconv.overrideAttrs (_:
@@ -126,6 +186,16 @@ let iosSupport = system == "x86_64-darwin";
 
     allCabalHashesOverlay = import ./nixpkgs-overlays/all-cabal-hashes;
 
+    # nixpkgsArgs: the full overlay stack applied to nixpkgs.  Order matters:
+    #   1. ghc.nix — pin GHC versions
+    #   2. hackGetOverlay — thunk resolution (hackGet, thunkSet, filterGit)
+    #   3. bindHaskellOverlays — store composed haskell overlays
+    #   4. forceStaticLibs — static libiconv/zlib for cross builds
+    #   5. splicesEval — TH splice save/load GHC variants
+    #   6. mobileGhcOverlay — mobile-specific GHC patches
+    #   7. allCabalHashesOverlay — pin all-cabal-hashes for cabal2nix
+    #   8. (inline) — misc platform fixups (ios-deploy, openjdk, sqlite, libffi)
+    #   9. nixpkgsOverlays — user-provided overlays (from caller)
     nixpkgsArgs = {
       inherit system;
       overlays = [
@@ -198,6 +268,9 @@ let iosSupport = system == "x86_64-darwin";
 
     wasmCross = nixpkgs.hackGet ./wasm-cross;
     webGhcSrc = (import (wasmCross + /webghc.nix) { inherit fetchgit; }).ghc8107SplicesSrc;
+    # Cross-compilation nixpkgs instances.  Each entry re-instantiates
+    # nixpkgsFunc with a crossSystem config so that all packages
+    # (including haskell packages) are cross-compiled for the target.
     nixpkgsCross = {
       # NOTE(Dylan Green):
       # sdkVer 30 is the minimum for android, else we have to use libffi 3.3
@@ -267,7 +340,9 @@ let iosSupport = system == "x86_64-darwin";
 
     overrideCabal = pkg: f: if pkg == null then null else haskellLib.overrideCabal pkg f;
 
-    combineOverrides = old: new: old // new // lib.optionalAttrs (old ? overrides && new ? overrides) {
+    # Merge two override records, composing their `overrides` functions so
+  # that neither is lost.  This is the core of the recursive-override pattern.
+  combineOverrides = old: new: old // new // lib.optionalAttrs (old ? overrides && new ? overrides) {
       overrides = lib.composeExtensions old.overrides new.overrides;
     };
 
@@ -279,6 +354,11 @@ let iosSupport = system == "x86_64-darwin";
       override = new: makeRecursivelyOverridable (x.override (old: (combineOverrides old new)));
     };
 
+  # ghcSavedSplices: the native-GHC package set used to evaluate and
+  # serialize Template Haskell splices.  The saved splice data is then
+  # loaded by the cross-compiling GHC (ghcSplices-8_*) so TH works
+  # without running target code.  Uses integer-simple to avoid GMP
+  # dependency issues on mobile targets.
   ghcSavedSplices = if __useNewerCompiler then ghcSavedSplices-8_10 else ghcSavedSplices-8_6;
   ghcSavedSplices-8_6 = (makeRecursivelyOverridable nixpkgs.haskell.packages.integer-simple.ghcSplices-8_6).override {
     overrides = lib.foldr lib.composeExtensions (_: _: {}) (let
@@ -336,6 +416,8 @@ let iosSupport = system == "x86_64-darwin";
     overrides = nixpkgsCross.wasm.haskell.overlays.combined;
   });
 
+  # Native GHC package sets — the primary development compilers.
+  # `ghc` is the default, selected by __useNewerCompiler.
   ghc = if __useNewerCompiler then ghc8_10 else ghc8_6;
   ghcHEAD = (makeRecursivelyOverridable nixpkgs.haskell.packages.ghcHEAD).override {
     overrides = nixpkgs.haskell.overlays.combined;
@@ -361,6 +443,8 @@ let iosSupport = system == "x86_64-darwin";
         new));
   };
 
+  # Android cross-compilation package sets.  These use integer-simple
+  # and the ghcSplices compilers for TH support on ARM targets.
   ghcAndroidAarch64 = if __useNewerCompiler then ghcAndroidAarch64-8_10 else ghcAndroidAarch64-8_6;
   ghcAndroidAarch64-8_6 = makeRecursivelyOverridableBHPToo ((makeRecursivelyOverridable nixpkgsCross.android.aarch64.haskell.packages.integer-simple.ghcSplices-8_6).override {
     overrides = nixpkgsCross.android.aarch64.haskell.overlays.combined;
@@ -375,6 +459,7 @@ let iosSupport = system == "x86_64-darwin";
   ghcAndroidAarch32-8_10 = makeRecursivelyOverridableBHPToo ((makeRecursivelyOverridable nixpkgsCross.android.aarch32.haskell.packages.integer-simple.ghcSplices-8_10).override {
     overrides = nixpkgsCross.android.aarch32.haskell.overlays.combined;
   });
+  # iOS cross-compilation package sets (simulator and device).
   ghcIosSimulator64-8_6 = makeRecursivelyOverridableBHPToo ((makeRecursivelyOverridable nixpkgsCross.ios.simulator64.haskell.packages.integer-simple.ghcSplices-8_6).override {
     overrides = nixpkgsCross.ios.simulator64.haskell.overlays.combined;
   });
@@ -427,6 +512,9 @@ let iosSupport = system == "x86_64-darwin";
     buildApp = nixpkgs.lib.makeOverridable (import ./ios { inherit nixpkgs ghc; });
   };
 
+# The public API of reflex-platform.  Everything below is exported as
+# attributes of the returned set.  The `project` function is the main
+# user-facing entry point for multi-package Haskell projects.
 in let this = rec {
   inherit (nixpkgs)
     filterGit
@@ -632,6 +720,11 @@ in let this = rec {
       ];
 
   inherit system androidSupport iosSupport ghc86Support;
+
+  # project: the main user-facing function for building multi-package
+  # Haskell projects.  Takes a function (pkgs -> config) and returns an
+  # attrset with per-platform package sets, shells, and mobile builders.
+  # See ./project/default.nix for the full config schema.
   project = args: import ./project this (args ({ pkgs = nixpkgs; } // this));
   tryReflexShell = pinBuildInputs ("shell-" + system) tryReflexPackages;
   ghcjsExternsJs = ./ghcjs.externs.js;

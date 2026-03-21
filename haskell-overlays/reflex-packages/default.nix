@@ -1,3 +1,31 @@
+# haskell-overlays/reflex-packages/default.nix — Reflex ecosystem packages
+#
+# This overlay defines every Haskell package in the reflex ecosystem,
+# including their build flags, test configuration, and platform-specific
+# adjustments.  It is the single source of truth for how reflex, reflex-dom,
+# jsaddle, gargoyle, and their many dependencies are built.
+#
+# Key sections:
+#   • Reflex family — reflex, reflex-dom-core, reflex-dom, reflex-todomvc,
+#     reflex-aeson-orphans
+#   • Terminal / Conventional OS — reflex-vty, reflex-process, reflex-fsnotify
+#   • Tooling — reflex-ghci
+#   • GHCJS and JSaddle — jsaddle, jsaddle-dom, jsaddle-warp, jsaddle-wkwebview,
+#     ghcjs-dom family
+#   • Gargoyle — gargoyle, gargoyle-postgresql, gargoyle-postgresql-nix
+#   • Dependent types — dependent-sum, dependent-map, constraints-extras,
+#     aeson-gadt-th, some, prim-uniq
+#   • Universe — universe, universe-base, universe-some, etc.
+#   • Misc — patch, commutative-semigroups, vessel, witherable, webdriver
+#
+# Package sources come from thunks in ./dep/ (resolved via thunkSet) and
+# some from hackage via callHackage.  The `_dep` attribute accumulates all
+# resolved thunk sources so other overlays can reference them.
+#
+# IMPORTANT: reflex-dom-core has doCheck = false by default because its
+# tests (headless browser + selenium) are non-deterministic.  Test deps
+# for hydration-tests and gc-tests are also disabled via cabal flags.
+#
 { haskellLib
 , lib, nixpkgs
 , thunkSet, fetchFromGitHub, fetchFromBitbucket, hackGet
@@ -37,6 +65,8 @@ let
   };
 in
 {
+  # Accumulate resolved thunk sources from ./dep/ into the _dep attr.
+  # Other overlays and downstream code can access these via self._dep.<name>.
   _dep = super._dep or {} // thunkSet ./dep;
 
   ##

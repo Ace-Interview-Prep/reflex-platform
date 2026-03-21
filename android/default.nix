@@ -1,3 +1,21 @@
+# android/default.nix — Android APK builder
+#
+# Provides `buildApp` which compiles a Haskell executable for Android
+# (both aarch64 and aarch32), packages it with Java sources
+# (android-activity's HaskellActivity + reflex-dom's MainWidget),
+# Android resources, and a Gradle build into an APK or AAB.
+#
+# The actual Gradle invocation and APK assembly is in ./impl.nix.
+# This file defines the public API and validates inputs.
+#
+# Usage (from project/default.nix):
+#   android.buildApp {
+#     package = p: p.myApp;
+#     executableName = "myApp";
+#     applicationId = "com.example.myapp";
+#     displayName = "My App";
+#   }
+#
 env@{
   nixpkgs
 , nixpkgsCross

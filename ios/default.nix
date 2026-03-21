@@ -1,3 +1,23 @@
+# ios/default.nix — iOS .app bundle builder
+#
+# Produces a macOS-buildable iOS application bundle containing:
+#   • The cross-compiled Haskell executable (via jsaddle-wkwebview)
+#   • Info.plist with configurable bundle metadata
+#   • Static assets, icons, and splash screens
+#   • Deploy scripts for device (ios-deploy) and simulator
+#   • A packaging script for App Store submission (codesign + xcrun)
+#
+# Requires macOS (x86_64-darwin) as the build host and a valid Apple
+# Developer certificate for code signing.
+#
+# Usage (from project/default.nix):
+#   ios.buildApp {
+#     package = p: p.myApp;
+#     executableName = "myApp";
+#     bundleIdentifier = "com.example.myapp";
+#     bundleName = "My App";
+#   }
+#
 { nixpkgs, ghc, withSimulator ? false }:
 
 { #TODO

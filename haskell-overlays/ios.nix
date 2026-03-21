@@ -1,3 +1,15 @@
+# haskell-overlays/ios.nix — iOS target adjustments
+#
+# Applied when building for iOS (isiOS).  Key changes:
+#   • Nullify server-side packages unavailable on iOS (websockets, wai,
+#     warp, wai-app-static, ghcjs-prim, cabal-doctest)
+#   • Disable shared libraries and executables (iOS requires static linking)
+#   • Disable haddock generation (not needed for device builds)
+#   • Disable optimizations for `free` and `jsaddle` to work around
+#     ARM code generation bugs (ekmett/free#176)
+#   • Use integer-simple flags (blaze-textual, cryptonite)
+#   • Post-fixup reflex-todomvc to create .app bundle structure
+#
 { haskellLib, lib }:
 
 self: super: {

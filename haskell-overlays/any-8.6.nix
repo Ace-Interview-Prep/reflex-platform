@@ -1,3 +1,10 @@
+# haskell-overlays/any-8.6.nix — GHC 8.6.x specific overrides
+#
+# Applied to both GHC and GHCJS when the compiler version is 8.6.x.
+# Includes dontCheck for haddock and cabal-macosx, version pins for
+# webkit2gtk3-javascriptcore, c2hs, gtk2hs-buildtools, and a custom
+# cabal-install build with Cabal 2.4 for compatibility.
+#
 { pkgs, haskellLib, fetchFromGitHub }:
 with haskellLib;
 let

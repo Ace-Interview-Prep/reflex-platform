@@ -1,6 +1,13 @@
-# This is important to have for jsaddle, reflex, reflex-dom-core, and
-# reflex-dom, at the very least; I suspect it's important for a lot
-# more stuff, as well.
+# haskell-overlays/expose-all-unfoldings.nix — Cross-module inlining
+#
+# Adds -fexpose-all-unfoldings to every Haskell package.  This GHC flag
+# serializes all function unfoldings into .hi files, enabling aggressive
+# cross-module inlining.  Critical for performance in the reflex ecosystem
+# where core primitives (jsaddle, reflex, reflex-dom-core) rely heavily
+# on inlining for zero-cost abstractions.
+#
+# Enabled by default via the `enableExposeAllUnfoldings` parameter in
+# the top-level default.nix.
 
 { }:
 

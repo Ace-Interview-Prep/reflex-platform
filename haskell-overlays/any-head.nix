@@ -1,3 +1,10 @@
+# haskell-overlays/any-head.nix — GHC HEAD (> 8.11) overrides
+#
+# Applied when using a bleeding-edge GHC version.  Jailbreaks
+# many packages to relax version bounds that haven't been updated
+# for the latest base/GHC, and pins some packages to compatible
+# versions (tagged, contravariant, stm, entropy).
+#
 { haskellLib, fetchFromGitHub }:
 
 self: super: {

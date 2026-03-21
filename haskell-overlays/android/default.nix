@@ -1,7 +1,20 @@
+# haskell-overlays/android/default.nix — Android target adjustments
+#
+# Applied when building for Android (useAndroidPrebuilt).  Key changes:
+#   • Build android-activity from its thunk with JDK and Android NDK deps
+#   • Nullify desktop-only packages (jsaddle-warp, jsaddle-webkitgtk, etc.)
+#   • Disable shared executables, enable dontStrip (Android debugger needs symbols)
+#   • Use integer-simple flags (blaze-textual, cryptonite)
+#   • Enable -fPIC for hashable and primitive (required for position-independent
+#     code on Android's dynamic linker)
+#   • HACK: strip RPATH from attoparsec to fix Android linker issues
+#   • Disable optimizations for `free` and `jsaddle` (ARM codegen bug)
+#
 { haskellLib, nixpkgs, thunkSet }:
 
 let
-  # add the "-fPIC" option to both "ghc-options" and "cc-options" for the library component of a package
+  # Add -fPIC to both ghc-options and cc-options for a package's library.
+  # Required on Android where all code must be position-independent.
   enableFPic = pkg: haskellLib.overrideCabal pkg (old: {
     preConfigure = ''
       sed -i 's/^library *\(.*\)$/library \1\n  cc-options: -fPIC\n  ghc-options: -fPIC/i' *.cabal

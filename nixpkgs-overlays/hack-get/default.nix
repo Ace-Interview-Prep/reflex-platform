@@ -1,3 +1,29 @@
+# nixpkgs-overlays/hack-get/default.nix — Thunk resolution primitives
+#
+# This overlay adds three attributes to nixpkgs:
+#
+#   filterGit :: Path -> Derivation
+#     Strip .git, tags, TAGS, and dist from a source path so that nix
+#     store hashes are stable across git metadata changes.
+#
+#   hackGet :: Path -> Derivation
+#     Resolve a "thunk" directory to a nix source derivation.  A thunk
+#     is a directory containing either:
+#       • github.json — fetched via fetchFromGitHub
+#       • git.json    — fetched via fetchgit (or builtins.fetchGit for
+#                        SSH URLs with '@' in them)
+#       • thunk.nix   — newer obelisk-style thunks with their own fetch logic
+#       • (none of the above) — treated as an unpacked checkout, filtered
+#                        through filterGit for the store path.
+#     This is the mechanism that lets reflex-platform pin all its
+#     Haskell dependencies as lightweight JSON pointers rather than
+#     full git submodules.
+#
+#   thunkSet :: Path -> AttrSet
+#     Apply hackGet to every subdirectory of a given path, returning
+#     { <dirname> = <resolved source>; ... }.  Used to bulk-resolve
+#     the dep/ directories throughout the overlay tree.
+#
 { lib }:
 
 self:
@@ -5,7 +31,9 @@ self:
 {
   filterGit = builtins.filterSource (path: type: !(builtins.any (x: x == baseNameOf path) [".git" "tags" "TAGS" "dist"]));
 
-  # Retrieve source that is controlled by the hack-* scripts; it may be either a stub or a checked-out git repo
+  # Resolve a thunk directory to a fetchable source derivation.
+  # Supports three thunk formats: obelisk thunk.nix, git.json, github.json.
+  # Falls back to treating the path as an unpacked checkout.
   hackGet = p:
     let
       contents = builtins.readDir p;

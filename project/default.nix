@@ -1,3 +1,26 @@
+# project/default.nix — Multi-package Haskell project builder
+#
+# This is the main user-facing function for building reflex-platform
+# projects.  It takes a `this` (the reflex-platform attrset) and a
+# config record, and produces:
+#
+#   prj.ghc.<pkg>       — native GHC builds of each package
+#   prj.ghcjs.<pkg>     — GHCJS builds of each package
+#   prj.shells.ghc      — nix-shell with all GHC deps combined
+#   prj.shells.ghcjs    — nix-shell with all GHCJS deps combined
+#   prj.android.<app>   — Android APK builds
+#   prj.ios.<app>        — iOS .app builds
+#
+# IMPORTANT CAVEAT (root cause of haddock build failures):
+# Line ~159 below uses `callCabal2nix` to re-create package derivations
+# from local paths.  This REPLACES the overlay versions that have
+# doCheck=false and custom cabal flags (like -f-hydration-tests).
+# The fresh callCabal2nix version has doCheck=true by default, which
+# pulls in test deps (webdriver → aeson version mismatch) and breaks
+# the build.  If you need to build haddocks or tests for local packages,
+# use the overlay version directly (e.g. reflex-platform.ghc.reflex-dom-core)
+# rather than going through `project`.
+#
 this:
 
 let
@@ -155,6 +178,10 @@ in
 
 }:
 let
+  # Compose the user's `overrides` with the local-package overlay.
+  # WARNING: The first overlay (callCabal2nix) recreates each local
+  # package from its source path, which replaces the overlay version.
+  # This means any doCheck/flag overrides from reflex-packages are lost.
   overrides' = nixpkgs.lib.foldr nixpkgs.lib.composeExtensions (_: _: {}) [
     (self: super: mapAttrs (name: path: self.callCabal2nix name path {}) packages)
     (self: super: {
@@ -164,6 +191,9 @@ let
     })
     overrides
   ];
+  # For each platform in `shells`, create a full haskell package set
+  # with the composed overrides applied.  prj.ghc is the GHC set,
+  # prj.ghcjs is the GHCJS set, etc.
   mkPkgSet = name: _: this.${name}.override { overrides = overrides'; };
   prj = mapAttrs mkPkgSet shells // {
     shells = mapAttrs (name: pnames:
